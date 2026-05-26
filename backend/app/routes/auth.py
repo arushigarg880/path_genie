@@ -8,10 +8,8 @@ from app.core.security import (
     verify_password,
     create_access_token
 )
-from app.core.dependencies import (
-    get_db,
-    get_current_user
-)
+from app.db.session import get_db
+from app.core.dependencies import get_current_user
 
 router = APIRouter(
     prefix="/auth",
@@ -45,7 +43,13 @@ def register(
     db.refresh(new_user)
 
     return {
-        "message": "User registered successfully"
+        "success": True,
+        "message": "User registered successfully",
+        "data": {
+            "id": str(new_user.id),
+            "name": new_user.name,
+            "email": new_user.email
+        }
     }
 
 
@@ -78,8 +82,12 @@ def login(
     )
 
     return {
-        "access_token": token,
-        "token_type": "bearer"
+        "success": True,
+        "message": "Login successful",
+        "data": {
+            "access_token": token,
+            "token_type": "bearer"
+        }
     }
 
 
@@ -88,7 +96,27 @@ def get_me(
     current_user: User = Depends(get_current_user)
 ):
     return {
-        "id": str(current_user.id),
-        "name": current_user.name,
-        "email": current_user.email
+        "success": True,
+        "message": "User retrieved",
+        "data": {
+            "id": str(current_user.id),
+            "name": current_user.name,
+            "email": current_user.email,
+            "academic_year": current_user.academic_year,
+            "education": current_user.education,
+            "hours_per_day": current_user.hours_per_day,
+            "learning_pace": current_user.learning_pace,
+            "created_at": str(current_user.created_at)
+        }
+    }
+
+
+@router.post("/logout")
+def logout(
+    current_user: User = Depends(get_current_user)
+):
+    return {
+        "success": True,
+        "message": "Logged out successfully",
+        "data": None
     }

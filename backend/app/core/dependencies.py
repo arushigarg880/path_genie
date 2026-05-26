@@ -5,17 +5,9 @@ from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.models.user import User
 from app.core.security import decode_token
+from app.db.session import get_db
 
 security = HTTPBearer()
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -44,3 +36,18 @@ def get_current_user(
         )
 
     return user
+def require_complete_profile(
+    current_user: User = Depends(get_current_user)
+):
+    required_fields = [
+        current_user.education,
+        current_user.academic_year,
+        current_user.hours_per_day,
+        current_user.learning_pace
+    ]
+    if not all(required_fields):
+        raise HTTPException(
+            status_code=400,
+            detail="Please complete your profile before accessing this feature"
+        )
+    return current_user

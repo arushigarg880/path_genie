@@ -1,10 +1,12 @@
 import uuid
-from sqlalchemy import Column, String, DateTime
+import enum
+from sqlalchemy import Enum as SAEnum   
+from sqlalchemy import Column, String, DateTime,Float
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 
 from app.db.base import Base
-
+from app.core.enums import LearningPace
 
 class User(Base):
     __tablename__ = "users"
@@ -21,9 +23,9 @@ class User(Base):
 
     education = Column(String(100), nullable=True)
 
-    hours_per_day = Column(String, nullable=True)
+    hours_per_day = Column(Float, nullable=True)
 
-    learning_pace = Column(String(20), nullable=True)
+    learning_pace = Column(SAEnum(LearningPace), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

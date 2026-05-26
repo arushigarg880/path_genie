@@ -21,3 +21,10 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+backend/venv/
+backend/.env
+__pycache__/
+*.pyc
+.vscode/
+node_modules/
