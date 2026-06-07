@@ -6,6 +6,7 @@ from app.models.career import UserCareer, UserRoadmap, RoadmapPhase
 from app.models.skill import Skill
 from app.services.gap_service import get_skill_gap_for_user
 from app.services.prerequisite_service import get_ordered_skills
+from app.engines.roadmap_engine import generate_weekly_plan, check_feasibility
 
 router = APIRouter(prefix="/roadmap", tags=["Roadmap"])
 
@@ -31,6 +32,13 @@ def generate_roadmap(
     if not active_career:
         raise HTTPException(status_code=400, detail="No active career selected")
 
+    # Step 1.5: Profile completeness check (FR-6.1)
+    if not current_user.hours_per_day or not current_user.learning_pace:
+        raise HTTPException(
+            status_code=400,
+            detail="Complete your profile first (hours_per_day and learning_pace required)"
+        )
+
     # Step 2: Get missing skills from M4
     gap = get_skill_gap_for_user(current_user.id, db)
     all_missing = gap["critical"] + gap["important"] + gap["supplementary"]
@@ -40,20 +48,20 @@ def generate_roadmap(
 
     # Step 3: Get just the skill IDs
     missing_skill_ids = [cs["skill_id"] for cs in all_missing]
+
     # Step 4: Run topological sort to get correct learning order
     try:
         ordered_ids = get_ordered_skills(missing_skill_ids, db)
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    # Step 5: Deactivate old roadmaps for this user+career
+    # Step 5: Track old roadmap versions
     old_roadmaps = db.query(UserRoadmap).filter_by(
         user_id=current_user.id,
         career_id=active_career.career_id
     ).all()
     last_version = 0
     for r in old_roadmaps:
-        r.version = r.version  # keep existing
         last_version = max(last_version, r.version)
 
     # Step 6: Build roadmap_data (list of skill info in order)
@@ -70,6 +78,23 @@ def generate_roadmap(
                 "category": skill.category
             })
 
+    # Step 6b: Feasibility check PEHLE (FR-6.6)
+    hours_per_day = current_user.hours_per_day
+    learning_pace = current_user.learning_pace.value
+
+    feasibility = check_feasibility(
+        ordered_skills=roadmap_data,
+        hours_per_day=hours_per_day,
+        learning_pace=learning_pace
+    )
+
+    # Step 6c: Weekly plan BAAD MEIN
+    weekly_plan = generate_weekly_plan(
+        ordered_skills=roadmap_data,
+        hours_per_day=hours_per_day,
+        learning_pace=learning_pace
+    )
+
     # Step 7: Save new roadmap to DB
     new_roadmap = UserRoadmap(
         user_id=current_user.id,
@@ -79,7 +104,7 @@ def generate_roadmap(
         stability_score=1.0
     )
     db.add(new_roadmap)
-    db.flush()  # get the new roadmap's ID without full commit
+    db.flush()
 
     # Step 8: Save individual phases
     for i, skill_id in enumerate(ordered_ids):
@@ -93,14 +118,23 @@ def generate_roadmap(
 
     db.commit()
 
+    weekly_capacity = round(
+        hours_per_day * 7 *
+        {"slow": 0.7, "normal": 1.0, "fast": 1.3}.get(learning_pace, 1.0), 1
+    )
+
     return {
         "success": True,
-        "message": "Roadmap generated successfully",
+        "message": "Roadmap generated successfully" if feasibility["feasible"] else "Roadmap generated but career not achievable in 1 year at current pace",
         "data": {
             "roadmap_id": str(new_roadmap.id),
             "version": new_roadmap.version,
             "total_phases": len(ordered_ids),
-            "phases": roadmap_data
+            "total_weeks": len(weekly_plan),
+            "weekly_capacity_hours": weekly_capacity,
+            "feasibility": feasibility,
+            "phases": roadmap_data,
+            "weekly_plan": weekly_plan
         }
     }
 
@@ -110,7 +144,6 @@ def get_roadmap(
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Get latest roadmap for user
     roadmap = db.query(UserRoadmap).filter_by(
         user_id=current_user.id
     ).order_by(UserRoadmap.version.desc()).first()
@@ -129,6 +162,8 @@ def get_roadmap(
             "phases": roadmap.roadmap_data
         }
     }
+
+
 @router.get("/history")
 def get_roadmap_history(
     current_user=Depends(get_current_user),
@@ -172,7 +207,6 @@ def mark_phase_complete(
     if not phase:
         raise HTTPException(status_code=404, detail="Phase not found")
 
-    # Security check — user can only update their own phases
     roadmap = db.query(UserRoadmap).filter(
         UserRoadmap.id == phase.roadmap_id,
         UserRoadmap.user_id == current_user.id

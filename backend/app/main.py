@@ -12,9 +12,12 @@ from app.routes.careers import router as careers_router
 from contextlib import asynccontextmanager
 from app.routes.gap import router as gap_router
 from app.routes.roadmap import router as roadmap_router
-
+from app.routes.readiness import router as readiness_router
+from app.routes.psd import router as psd_router
+from app.routes.resources import router as resources_router
 Base.metadata.create_all(bind=engine)
-
+from dotenv import load_dotenv
+load_dotenv()
 @asynccontextmanager
 async def lifespan(app):
     db = SessionLocal()
@@ -39,7 +42,10 @@ app.include_router(profile_router)
 app.include_router(careers_router)
 app.include_router(gap_router)
 app.include_router(roadmap_router)
+app.include_router(readiness_router)
+app.include_router(psd_router)
+app.include_router(resources_router)
+
 @app.get("/")
 def root():
     return {"message": "PathGenie backend + database connected"}
-
